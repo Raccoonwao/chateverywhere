@@ -7,15 +7,12 @@ import 'bootstrap/dist/css/bootstrap.min.css';
 import axios from 'axios'
 import Card from 'react-bootstrap/Card';
 import Toast from 'react-bootstrap/Toast';
-// import { response } from "express";
 
-
-// https://react-bootstrap.netlify.app/components/buttons/#button-props
 const chatUrl = 'https://api.openai.com/v1/completions'
 const config = {
   headers: {
     'Content-Type': 'application/json',
-    'Authorization': `Bearer ${apiKey}`
+    'Authorization': `Bearer ${process.env.REACT_APP_CHAT_API_KEY}`
   }
 };
 
@@ -27,19 +24,43 @@ function App() {
   const hideToast = () => setToastStatus({ show: false })
   const showToast = (message) => setToastStatus({ show: true, message })
 
-  const createChatData = () => ({
+  const createChatData = (data) => ({
     "model": "text-davinci-003",
     "prompt": data,
     "max_tokens": 4000,
     "temperature": 1.0
   })
 
-  const addChatHistory = (source, chat) => {
-    console.log(chatHistory)
-    setChatHistory([...chatHistory, { source, chat }])
+  const send = (data) => {
+    if (!data) {
+      return
+    }
+    setData('')
+    console.log(`send:${data}`, chatHistory)
+    axios.post(chatUrl, createChatData(data), config)
+      .then(resp => {
+        console.log(`=== handle axios response`, data, resp)
+        handleChatResponse(resp.data.choices?.[0]?.text)
+      })
+      .catch(e => handleError(e))
   }
+
+  React.useEffect(() => {
+      if (chatHistory.length > 0 && chatHistory[chatHistory.length-1].source === 'me') {
+        console.log('send', chatHistory)
+        send(chatHistory.at(-1)?.chat)
+      }
+    },
+    [ chatHistory ]
+  )
+
+  const addChatHistory = (source, chat) => setChatHistory([...chatHistory, { source, chat, time: new Date() }])
+  const addMyChat = () => addChatHistory('me', data)
   const handleChatResponse = (reply) => {
-    addChatHistory('robot', reply)
+    const lastChat = chatHistory.at(-1)
+    if (lastChat?.source === 'me') {
+      addChatHistory('robot', reply)
+    }
   }
   const handleError = e => {
     console.log(`axio error`, e)
@@ -48,47 +69,37 @@ function App() {
       return
     }
     if (e.response) {
-      showToast(`Server error: ${e.status}` )
+      showToast(`Server error: ${e.status}`)
       return
     }
-
-    showToast('Unknown error')
-  }
-
-  const send = () => {
-    // console.log(`send:${data}`, chatHistory)
-    if (data) {
-      addChatHistory('me', data)
-      setData('')
-      console.log(`send:${data}`, chatHistory)
-      axios.post(chatUrl, createChatData(), config)
-        .then(resp => handleChatResponse(resp.data.choices?.[0]?.text))
-        .catch(e => handleError(e))
-    }
+    console.log(`axios error`, e)
+    showToast(`Unknown error: ${e.error}`)
   }
 
   const reset = () => setData('')
+  const clearChat = () => setChatHistory([])
   const handleChange = (e) => setData(e.target.value)
   const handleKeyDown = e => {
-    if (e.ctrlKey && e.code === 'KeyA') {
-      showToast('hellow world')
-      return
-    }
     if (e.ctrlKey && e.code === 'Enter') {
-      send()
+      addMyChat()
     }
   }
-  // const showChatHistory = () => {
-  //   const h = chatHistory.map(history => {
-  //     return <Card>
-  //       <Card.Body>{history.chat}</Card.Body>
-  //       </Card>
-  //   })
-  //   return h
-  // }
 
   const cardStyle = {
     margin: '5px'
+  }
+  const getHeader = (history) => {
+    if (history?.source === 'me') {
+      return <Card.Header>You</Card.Header>
+    } 
+    return <Card.Header style={{background: '#ccc'}}>
+      {/* <img src="chatgpt.png" alt="" width={32}/> */}
+      ChatGPT</Card.Header>
+  }
+  const copyChat = () => {
+    if (chatHistory.length>0) {
+      navigator.clipboard.writeText(JSON.stringify(chatHistory))
+    }
   }
 
   return (
@@ -101,26 +112,28 @@ function App() {
         <Form.Control as="textarea" placeholder="Leave a comment here" value={data} onChange={handleChange} onKeyDown={handleKeyDown} />
       </FloatingLabel>
 
-      <Button variant="outline-primary" onClick={reset}>Reset</Button>{' '}
-      <Button variant="outline-primary" onClick={send}>Chat</Button>
+      <Button variant="outline-primary" onClick={reset} disabled={!data}>Reset</Button>{' '}
+      <Button variant="outline-primary" onClick={addMyChat} disabled={!data}>Chat</Button>{' '}
+      <Button variant="outline-primary" onClick={clearChat} disabled={!chatHistory?.length > 0}>Clear Chat</Button>{' '}
+      <Button variant="outline-primary" onClick={copyChat} disabled={!chatHistory?.length > 0}>Copy Chat</Button>{' '}
 
       {
         chatHistory.map((h, index) =>
           <Card border={h.source === 'me' ? 'primary' : 'secondary'} key={'chat_' + index} style={cardStyle}>
+            {getHeader(h)}
             <Card.Body>{h.chat}</Card.Body>
           </Card>)
       }
-      <Toast onClose={hideToast} show={toastStatus.show} delay={3000} autohide 
-        // bg='danger'
-        >
+      <Toast onClose={hideToast} show={toastStatus.show} delay={3000} autohide
+        bg='danger'
+      >
         <Toast.Header>
-          <img
+          {/* <img
             src="holder.js/20x20?text=%20"
             className="rounded me-2"
             alt=""
-          />
+          /> */}
           <strong className="me-auto">Error</strong>
-          {/* <small>11 mins ago</small> */}
         </Toast.Header>
         <Toast.Body>{toastStatus.message}</Toast.Body>
       </Toast>
